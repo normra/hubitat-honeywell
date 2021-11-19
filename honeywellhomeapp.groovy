@@ -925,7 +925,8 @@ def setThermosatSetPoint(com.hubitat.app.DeviceWrapper device, mode=null, autoCh
     def honeywellLocation = deviceID.substring(0, (locDelminator-1))
     def honewellDeviceID = deviceID.substring((locDelminator+2))
 
-
+    // LogDebug("args: ${heatPoint} ${coolPoint}")
+    
     if (mode == null)
     {
         mode=device.currentValue('thermostatMode');
@@ -954,15 +955,27 @@ def setThermosatSetPoint(com.hubitat.app.DeviceWrapper device, mode=null, autoCh
         return false;
     }
 
+	def heatSet
     if (heatPoint == null)
     {
         heatPoint=device.currentValue('heatingSetpoint');
+		heatSet = false
     }
+	else
+	{
+		heatSet = true
+	}
 
+	def coolSet
     if (coolPoint == null)
     {
         coolPoint=device.currentValue('coolingSetpoint');
+		coolSet = false
     }
+	else
+	{
+		coolSet = true
+	}
 
     LogDebug("Attempting to Set DeviceID: ${honewellDeviceID}, With LocationID: ${honeywellLocation}");
     def uri = global_apiURL + '/v2/devices/thermostats/'+ honewellDeviceID + '?apikey=' + settings.consumerKey + '&locationId=' + honeywellLocation
@@ -975,14 +988,28 @@ def setThermosatSetPoint(com.hubitat.app.DeviceWrapper device, mode=null, autoCh
 
 
     // For LCC devices thermostatSetpointStatus = "NoHold" will return to schedule. "TemporaryHold" will hold the set temperature until "nextPeriodTime". "PermanentHold" will hold the setpoint until user requests another change.
+    // If heating/cooling setpoint is provided and set to 0, then this is interpreted as a request to return to schedule.
     // BugBug: Need to include nextPeriodTime if TemporaryHoldIs true
+ 
     if (honewellDeviceID.startsWith("LCC"))
     {
-        body = [
-                mode:mode,
-                thermostatSetpointStatus:"PermanentHold", 
-                heatSetpoint:heatPoint, 
-                coolSetpoint:coolPoint]
+    //    LogDebug("specs: ${heatSet} ${heatPoint} ${coolSet} ${coolPoint}")
+        
+		if ((heatSet && heatPoint == 0 ) || (coolSet && coolPoint == 0))
+		{
+			body = [
+				mode:mode,
+				thermostatSetpointStatus:"NoHold",
+                heatSetpoint:device.currentValue('heatingSetpoint'), 
+                coolSetpoint:device.currentValue('coolingSetpoint')]
+		}
+		else {
+			body = [
+					mode:mode,
+					thermostatSetpointStatus:"PermanentHold", 
+					heatSetpoint:heatPoint, 
+					coolSetpoint:coolPoint]
+		}
     }
     else //TCC model
     {
