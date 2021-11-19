@@ -924,9 +924,9 @@ def setThermosatSetPoint(com.hubitat.app.DeviceWrapper device, mode=null, autoCh
     def locDelminator = deviceID.indexOf('-');
     def honeywellLocation = deviceID.substring(0, (locDelminator-1))
     def honewellDeviceID = deviceID.substring((locDelminator+2))
+    def heatSet = heatPoint != null
+    def coolSet = coolPoint != null
 
-    // LogDebug("args: ${heatPoint} ${coolPoint}")
-    
     if (mode == null)
     {
         mode=device.currentValue('thermostatMode');
@@ -955,27 +955,15 @@ def setThermosatSetPoint(com.hubitat.app.DeviceWrapper device, mode=null, autoCh
         return false;
     }
 
-	def heatSet
     if (heatPoint == null)
     {
         heatPoint=device.currentValue('heatingSetpoint');
-		heatSet = false
     }
-	else
-	{
-		heatSet = true
-	}
 
-	def coolSet
     if (coolPoint == null)
     {
         coolPoint=device.currentValue('coolingSetpoint');
-		coolSet = false
     }
-	else
-	{
-		coolSet = true
-	}
 
     LogDebug("Attempting to Set DeviceID: ${honewellDeviceID}, With LocationID: ${honeywellLocation}");
     def uri = global_apiURL + '/v2/devices/thermostats/'+ honewellDeviceID + '?apikey=' + settings.consumerKey + '&locationId=' + honeywellLocation
@@ -993,9 +981,7 @@ def setThermosatSetPoint(com.hubitat.app.DeviceWrapper device, mode=null, autoCh
  
     if (honewellDeviceID.startsWith("LCC"))
     {
-    //    LogDebug("specs: ${heatSet} ${heatPoint} ${coolSet} ${coolPoint}")
-        
-		if ((heatSet && heatPoint == 0 ) || (coolSet && coolPoint == 0))
+ 		if ((heatSet && heatPoint == 0 ) || (coolSet && coolPoint == 0))
 		{
 			body = [
 				mode:mode,

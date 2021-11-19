@@ -45,7 +45,7 @@ metadata {
                 title: "Allow Heat Mode, if false heat mode will be iqnored",
                 defaultValue:true)
         input ("coolModeEnabled", "bool", 
-                title: "Allow Cool Mode, if false heat mode will be iqnored",
+                title: "Allow Cool Mode, if false cool mode will be iqnored",
                 defaultValue:true)
         input ("debugLogs", "bool", 
 			   title: "Enable debug logging", 
@@ -181,7 +181,7 @@ void setCoolingSetpoint(temperature)
     }
     else
     {
-        LogInfo("Cooling setpoint changed to ${temperature}")
+        LogInfo("Cooling setpoint changed to ${temperature?:"scheduled"}")
     }
 }
 
@@ -199,7 +199,7 @@ void setHeatingSetpoint(temperature)
     }
     else
     {
-        LogInfo("Heating setpoint changed to ${temperature}")
+        LogInfo("Heating setpoint changed to ${temperature?:"scheduled"}")
     }
 }
 
