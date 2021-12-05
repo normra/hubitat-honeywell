@@ -18,6 +18,13 @@ Major Releases:
 Considerable inspiration an example to: https://github.com/dkilgore90/google-sdm-api/
 */
 
+/* 
+	NormR changes for multi-threaded safety
+	5-Dec-2021
+	- access_token and refresh_token accessed via atomicState
+	- update handling on 401 errors when doing retry to eliminate error message and return correct value
+*/
+
 
 import groovy.json.JsonSlurper
 import groovy.json.JsonOutput
@@ -218,11 +225,11 @@ def connectToHoneywell()
 
     //if this isn't defined early then the redirect fails for some reason...
     def redirectLocation = "http://www.bing.com";
-    if (state.accessToken == null)
+    if (atomicState.accessToken == null)
     {
         createAccessToken();
     }
-    def auth_state = java.net.URLEncoder.encode("${getHubUID()}/apps/${app.id}/handleAuth?access_token=${state.accessToken}", "UTF-8")
+    def auth_state = java.net.URLEncoder.encode("${getHubUID()}/apps/${app.id}/handleAuth?access_token=${ atomicState.accessToken}", "UTF-8")
     def escapedRedirectURL = java.net.URLEncoder.encode(global_redirectURL, "UTF-8")
     def authQueryString = "response_type=code&redirect_uri=${escapedRedirectURL}&client_id=${settings.consumerKey}&state=${auth_state}";
 
@@ -269,7 +276,7 @@ def connectToHoneywell()
 
 def getDiscoverButton() 
 {
-    if (state.access_token == null) 
+    if ( atomicState.access_token == null) 
     {
         section 
         {
@@ -341,7 +348,7 @@ def appButtonHandler(btn) {
         initialize()
         break
     case 'createNewAccessToken':
-        state.access_token = null
+         atomicState.access_token = null
         createAccessToken()
         break
     case 'connectToHoneywell':
@@ -368,7 +375,7 @@ def discoverDevices()
     LogDebug("discoverDevices()");
 
     def uri = global_apiURL + '/v2/locations' + "?apikey=" + settings.consumerKey
-    def headers = [ Authorization: 'Bearer ' + state.access_token ]
+    def headers = [ Authorization: 'Bearer ' +  atomicState.access_token ]
     def contentType = 'application/json'
     def params = [ uri: uri, headers: headers, contentType: contentType ]
     LogDebug("Location Discovery-params ${params}")
@@ -539,7 +546,7 @@ def refreshToken()
 {
     LogDebug("refreshToken()");
 
-    if (state.refresh_token != null)
+    if ( atomicState.refresh_token != null)
     {
         def authorization = ("${settings.consumerKey}:${settings.consumerSecret}").bytes.encodeBase64().toString()
 
@@ -549,7 +556,7 @@ def refreshToken()
                     ]
         def body = [
                         grant_type:"refresh_token",
-                        refresh_token:state.refresh_token
+                        refresh_token: atomicState.refresh_token
 
         ]
         def params = [uri: global_apiURL, path: "/oauth2/token", headers: headers, body: body]
@@ -580,8 +587,8 @@ def loginResponse(response)
 
     if (reCode == 200)
     {
-        state.access_token = reJson.access_token;
-        state.refresh_token = reJson.refresh_token;
+         atomicState.access_token = reJson.access_token;
+         atomicState.refresh_token = reJson.refresh_token;
         
         def expireTime = (Integer.parseInt(reJson.expires_in) - 100)
         LogInfo("Honeywell API Token Refreshed Succesfully, Next Scheduled in: ${expireTime} sec")
@@ -667,7 +674,7 @@ def refreshThermosat(com.hubitat.app.DeviceWrapper device, retry=false)
     LogDebug("Attempting to Update DeviceID: ${honewellDeviceID}, With LocationID: ${honeywellLocation}");
 
     def uri = global_apiURL + '/v2/devices/thermostats/'+ honewellDeviceID + '?apikey=' + settings.consumerKey + '&locationId=' + honeywellLocation
-    def headers = [ Authorization: 'Bearer ' + state.access_token ]
+    def headers = [ Authorization: 'Bearer ' +  atomicState.access_token ]
     def contentType = 'application/json'
     def params = [ uri: uri, headers: headers, contentType: contentType ]
     LogDebug("Location Discovery-params ${params}")
@@ -692,10 +699,13 @@ def refreshThermosat(com.hubitat.app.DeviceWrapper device, retry=false)
             LogWarn('Authorization token expired, will refresh and retry.')
             refreshToken()
             refreshThermosat(device, true)
+			return
         }
-
+		else
+		{
         LogError("Thermosat API failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
-        return;
+		return
+		}
     }
 
     def tempUnits = "F"
@@ -771,7 +781,7 @@ String getRemoteSensorUserDefName(String parentDeviceId, String locationId, Stri
 {
     LogDebug("getRemoteSensorUserDefName()")
     def uri = global_apiURL + '/v2/devices/thermostats/'+ parentDeviceId + '/group/' +  groupId + '/rooms?apikey=' + settings.consumerKey + '&locationId=' + locationId
-    def headers = [ Authorization: 'Bearer ' + state.access_token ]
+    def headers = [ Authorization: 'Bearer ' +  atomicState.access_token ]
     def contentType = 'application/json'
     def params = [ uri: uri, headers: headers, contentType: contentType ]
     LogDebug("getRemoteSensorUserDefName - params ${params}")
@@ -794,11 +804,13 @@ String getRemoteSensorUserDefName(String parentDeviceId, String locationId, Stri
         {
             LogWarn('Authorization token expired, will refresh and retry.')
             refreshToken()
-            getRemoteSensorUserDefName(parentDeviceId, locationId, groupId, roomID, true)
+            return getRemoteSensorUserDefName(parentDeviceId, locationId, groupId, roomID, true)
         }
-
-        LogError("Remote Sensor API failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
-        return ""
+		else {
+			LogError("Remote Sensor API failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
+			return ""
+		}
+        
     }
 
     def roomJson
@@ -853,7 +865,7 @@ def refreshRemoteSensor(com.hubitat.app.DeviceWrapper device, retry=false)
     def honeywellLocation = device.currentValue("locationId")
     def roomID = device.currentValue("roomId")
     def uri = global_apiURL + '/v2/devices/thermostats/'+ honeywellDeviceID + '/priority?apikey=' + settings.consumerKey + '&locationId=' + honeywellLocation
-    def headers = [ Authorization: 'Bearer ' + state.access_token ]
+    def headers = [ Authorization: 'Bearer ' +  atomicState.access_token ]
     def contentType = 'application/json'
     def params = [ uri: uri, headers: headers, contentType: contentType ]
     LogDebug("refreshRemoteSensor - params ${params}")
@@ -878,10 +890,13 @@ def refreshRemoteSensor(com.hubitat.app.DeviceWrapper device, retry=false)
             LogWarn('Authorization token expired, will refresh and retry.')
             refreshToken()
             refreshRemoteSensor(device, true)
+			return
         }
-
-        LogError("Remote Sensor API failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
-        return;
+		else 
+		{
+			LogError("Remote Sensor API failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
+			return
+		}
     }
 
     def parentDeviceNetId = device.currentValue("parentDeviceNetId")
@@ -969,7 +984,7 @@ def setThermosatSetPoint(com.hubitat.app.DeviceWrapper device, mode=null, autoCh
     def uri = global_apiURL + '/v2/devices/thermostats/'+ honewellDeviceID + '?apikey=' + settings.consumerKey + '&locationId=' + honeywellLocation
 
     def headers = [
-                    Authorization: 'Bearer ' + state.access_token,
+                    Authorization: 'Bearer ' +  atomicState.access_token,
                     "Content-Type": "application/json"
                     ]
     def body = []
@@ -1028,14 +1043,17 @@ def setThermosatSetPoint(com.hubitat.app.DeviceWrapper device, mode=null, autoCh
         {
             LogWarn('Authorization token expired, will refresh and retry.')
             refreshToken()
-            setThermosatSetPoint(device, mode, autoChangeoverActive, emergencyHeatActive,  heatPoint, coolPoint, true)
+            return setThermosatSetPoint(device, mode, autoChangeoverActive, emergencyHeatActive,  heatPoint, coolPoint, true)
         }
-        LogError("Set Api Call failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
-        return false;
+		else
+		{
+			LogError("Set Api Call failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
+			return false
+		}
     }
 
     refreshThermosat(device)
-    return true;
+    return true
 }
 
 def setThermosatFan(com.hubitat.app.DeviceWrapper device, fan=null, retry=false)
@@ -1075,7 +1093,7 @@ def setThermosatFan(com.hubitat.app.DeviceWrapper device, fan=null, retry=false)
     def uri = global_apiURL + '/v2/devices/thermostats/'+ honewellDeviceID + '/fan' + '?apikey=' + settings.consumerKey + '&locationId=' + honeywellLocation
 
     def headers = [
-                    Authorization: 'Bearer ' + state.access_token,
+                    Authorization: 'Bearer ' +  atomicState.access_token,
                     "Content-Type": "application/json"
                     ]
     def body = [
@@ -1094,12 +1112,16 @@ def setThermosatFan(com.hubitat.app.DeviceWrapper device, fan=null, retry=false)
         {
             LogWarn('Authorization token expired, will refresh and retry.')
             refreshToken()
-            setThermosatFan(device, fan, true)
+            return setThermosatFan(device, fan, true)
         }
-        LogError("Set Fan Call failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
-        return false;
+		else 
+		{
+			LogError("Set Fan Call failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
+			return false
+		}
+   
     }
 
     refreshThermosat(device)
-    return true;
+    return true
 }
