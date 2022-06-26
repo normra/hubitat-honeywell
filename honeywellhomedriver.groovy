@@ -170,7 +170,7 @@ void off()
 //Defined Command : temperature required (NUMBER) - Cooling setpoint in degrees
 void setCoolingSetpoint(temperature)
 {
-    LogDebug("setCoolingSetpoint() - autoChangeoverActive: ${device.currentValue("autoChangeoverActive")}");
+    LogDebug("setCoolingSetpoint(${temperature}) - autoChangeoverActive: ${device.currentValue("autoChangeoverActive")}");
     
     //setThermosatSetPoint(com.hubitat.app.DeviceWrapper device, mode=null, autoChangeoverActive=false, heatPoint=null, coolPoint=null)
     if (!parent.setThermosatSetPoint(device, null, device.currentValue("autoChangeoverActive"), device.currentValue("emergencyHeatActive"), null, temperature))
@@ -188,7 +188,7 @@ void setCoolingSetpoint(temperature)
 //Defined Command : temperature required (NUMBER) - Heating setpoint in degrees
 void setHeatingSetpoint(temperature)
 {
-    LogDebug("setHeatingSetpoint() - autoChangeoverActive: ${device.currentValue("autoChangeoverActive")}");
+    LogDebug("setHeatingSetpoint(${temperature}) - autoChangeoverActive: ${device.currentValue("autoChangeoverActive")}");
 
     //setThermosatSetPoint(com.hubitat.app.DeviceWrapper device, mode=null, autoChangeoverActive=false, heatPoint=null, coolPoint=null)
     if (!parent.setThermosatSetPoint(device, null, device.currentValue("autoChangeoverActive"), device.currentValue("emergencyHeatActive"), temperature, null))
@@ -212,7 +212,7 @@ void setSchedule(JSON_OBJECT)
 //Defined Command : fanmode required (ENUM) - Fan mode to set
 void setThermostatFanMode(fanmode)
 {
-    LogDebug("setThermostatFanMode called");
+    LogDebug("setThermostatFanMode(${fanmode}) called");
     
     if(device.currentValue("supportedThermostatFanModes").contains(fanmode))
     {
@@ -236,7 +236,7 @@ void setThermostatFanMode(fanmode)
 //Defined Command : thermostatmode required (ENUM) - Thermostat mode to set
 void setThermostatMode(thermostatmode)
 {
-    LogDebug("setThermostatMode() - autoChangeoverActive: ${device.currentValue("autoChangeoverActive")}");
+    LogDebug("setThermostatMode(${thermostatmode}) - autoChangeoverActive: ${device.currentValue("autoChangeoverActive")}");
 
     if (thermostatmode == "heat" && !heatModeEnabled)
     {
