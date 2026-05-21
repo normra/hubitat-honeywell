@@ -39,7 +39,7 @@ import groovy.json.JsonOutput
 import groovy.transform.Field
 
 
-@Field static String global_apiURL = "https://api.honeywell.com"
+@Field static String global_apiURL = "https://api.honeywellhome.com"
 @Field static String global_redirectURL = "https://cloud.hubitat.com/oauth/stateredirect"
 
 definition(
