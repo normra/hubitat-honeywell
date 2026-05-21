@@ -19,10 +19,18 @@ Considerable inspiration an example to: https://github.com/dkilgore90/google-sdm
 */
 
 /* 
-	NormR changes for multi-threaded safety
-	5-Dec-2021
+	NormR changes 
+	19-Nov-2021 - 'return to schedule' option
+	- passing in a setPoint (heat or cool) of 0 causes thermostat to run schedule instead of being in permanent override
+	
+	5-Dec-2021 - improved (but not 100%) multi-threaded safety 
 	- access_token and refresh_token accessed via atomicState
-	- update handling on 401 errors when doing retry to eliminate error message and return correct value
+	- only throw warning message on 401 errors when doing retry
+
+    16-Jul-2022 - add immunity to Honeywell server issues
+	- add temperature to driver debugging information for Rule Engine 5.1 investigation
+    - add retry to all errors, not just 401 for selected calls
+    - increase connection timeout for selected calls - this needs version 2.0 or better of HE
 */
 
 
@@ -559,7 +567,7 @@ def refreshToken()
                         refresh_token: atomicState.refresh_token
 
         ]
-        def params = [uri: global_apiURL, path: "/oauth2/token", headers: headers, body: body]
+        def params = [uri: global_apiURL, path: "/oauth2/token", headers: headers, body: body, timeout: 120]
         
         try 
         {
@@ -676,7 +684,7 @@ def refreshThermosat(com.hubitat.app.DeviceWrapper device, retry=false)
     def uri = global_apiURL + '/v2/devices/thermostats/'+ honewellDeviceID + '?apikey=' + settings.consumerKey + '&locationId=' + honeywellLocation
     def headers = [ Authorization: 'Bearer ' +  atomicState.access_token ]
     def contentType = 'application/json'
-    def params = [ uri: uri, headers: headers, contentType: contentType ]
+    def params = [ uri: uri, headers: headers, contentType: contentType, timeout: 120 ]
     LogDebug("Location Discovery-params ${params}")
 
     //add error checking
@@ -694,10 +702,20 @@ def refreshThermosat(com.hubitat.app.DeviceWrapper device, retry=false)
     }
     catch (groovyx.net.http.HttpResponseException e) 
     {
-        if (e.getStatusCode() == 401 && !retry)
+        /* if (e.getStatusCode() == 401 && !retry) */
+        if (!retry)
         {
-            LogWarn('Authorization token expired, will refresh and retry.')
-            refreshToken()
+            pauseExecution(10 * 1000)
+            
+            if (e.getStatusCode() == 401) 
+            {
+                LogWarn('Authorization token expired, will refresh and retry.')
+                refreshToken()
+            }
+            else 
+            {
+                LogWarn("Thermostat API retry -- ${e.getLocalizedMessage()}: ${e.response.data}")
+            }
             refreshThermosat(device, true)
 			return
         }
@@ -867,7 +885,7 @@ def refreshRemoteSensor(com.hubitat.app.DeviceWrapper device, retry=false)
     def uri = global_apiURL + '/v2/devices/thermostats/'+ honeywellDeviceID + '/priority?apikey=' + settings.consumerKey + '&locationId=' + honeywellLocation
     def headers = [ Authorization: 'Bearer ' +  atomicState.access_token ]
     def contentType = 'application/json'
-    def params = [ uri: uri, headers: headers, contentType: contentType ]
+    def params = [ uri: uri, headers: headers, contentType: contentType, timeout: 120 ]
     LogDebug("refreshRemoteSensor - params ${params}")
 
     //add error checking
@@ -885,6 +903,32 @@ def refreshRemoteSensor(com.hubitat.app.DeviceWrapper device, retry=false)
     }
     catch (groovyx.net.http.HttpResponseException e)
     {
+        /* if (e.getStatusCode() == 401 && !retry) */
+        if (!retry)
+        {
+            pauseExecution(10 * 1000)
+            
+            if (e.getStatusCode() == 401) 
+            {
+                LogWarn('Authorization token expired, will refresh and retry.')
+                refreshToken()
+            }
+            else 
+            {
+                LogWarn("Remote Sensor API retry -- ${e.getLocalizedMessage()}: ${e.response.data}")
+            }
+            refreshRemoteSensor(device, true)
+			return
+        }
+		else
+		{
+        LogError("Remote Sensor API failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
+		return
+		}
+    }
+
+ /*
+    {
         if (e.getStatusCode() == 401 && !retry)
         {
             LogWarn('Authorization token expired, will refresh and retry.')
@@ -898,6 +942,7 @@ def refreshRemoteSensor(com.hubitat.app.DeviceWrapper device, retry=false)
 			return
 		}
     }
+*/
 
     def parentDeviceNetId = device.currentValue("parentDeviceNetId")
     def tempUnits
@@ -941,7 +986,7 @@ def setThermosatSetPoint(com.hubitat.app.DeviceWrapper device, mode=null, autoCh
     def honewellDeviceID = deviceID.substring((locDelminator+2))
     def heatSet = heatPoint != null
     def coolSet = coolPoint != null
-
+    
     if (mode == null)
     {
         mode=device.currentValue('thermostatMode');
@@ -996,7 +1041,7 @@ def setThermosatSetPoint(com.hubitat.app.DeviceWrapper device, mode=null, autoCh
  
     if (honewellDeviceID.startsWith("LCC"))
     {
- 		if ((heatSet && heatPoint == 0 ) || (coolSet && coolPoint == 0))
+ 		if ((heatSet && heatPoint <= 0 ) || (coolSet && coolPoint <= 0))
 		{
 			body = [
 				mode:mode,
@@ -1030,12 +1075,12 @@ def setThermosatSetPoint(com.hubitat.app.DeviceWrapper device, mode=null, autoCh
         body.put("emergencyHeatActive", emergencyHeatActive)
     }
 
-    def params = [ uri: uri, headers: headers, body: body]
+    def params = [ uri: uri, headers: headers, body: body, timeout: 120]
     LogDebug("setThermosat-params ${params}")
 
     try
     {
-        httpPostJson(params) { response -> LogInfo("SetThermostate() Mode: ${mode}; Heatsetpoint: ${heatPoint}; CoolPoint: ${coolPoint} API Response: ${response.getStatus()}")}
+        httpPostJson(params) { response -> LogInfo("SetThermostate(${device.displayName}) Mode: ${mode}; Heatsetpoint: ${heatPoint}; CoolPoint: ${coolPoint} API Response: ${response.getStatus()}")}
     }
     catch (groovyx.net.http.HttpResponseException e) 
     {
