@@ -31,6 +31,10 @@ Considerable inspiration an example to: https://github.com/dkilgore90/google-sdm
 	- add temperature to driver debugging information for Rule Engine 5.1 investigation
     - add retry to all errors, not just 401 for selected calls
     - increase connection timeout for selected calls - this needs version 2.0 or better of HE
+	
+	29-May-2026 - add more immunity to multithreading issues 
+	    - make app single threaded
+		- handle 400 errors on refresh by refreshing token (possibly caused by too many API calls per hour?)
 */
 
 
@@ -49,6 +53,7 @@ definition(
         description: "App for Lyric (LCC) and T series (TCC) Honeywell Thermostats, requires corisponding driver.",
         importUrl:"https://raw.githubusercontent.com/thecloudtaylor/hubitat-honeywell/main/honeywellhomeapp.groovy",
         category: "Thermostate",
+        singleThreaded: true,
         iconUrl: "",
         iconX2Url: "")
 
@@ -598,7 +603,8 @@ def loginResponse(response)
          atomicState.access_token = reJson.access_token;
          atomicState.refresh_token = reJson.refresh_token;
         
-        def expireTime = (Integer.parseInt(reJson.expires_in) - 100)
+        Integer expireTime = (Integer.parseInt(reJson.expires_in) - 100) as Integer
+        // Integer expireTime = (Integer.parseInt(reJson.expires_in) / 2) as Integer
         LogInfo("Honeywell API Token Refreshed Succesfully, Next Scheduled in: ${expireTime} sec")
         runIn(expireTime, refreshToken)
     }
@@ -707,9 +713,10 @@ def refreshThermosat(com.hubitat.app.DeviceWrapper device, retry=false)
         {
             pauseExecution(10 * 1000)
             
-            if (e.getStatusCode() == 401) 
+            if (e.getStatusCode() == 401 || e.getStatusCode() == 400)
             {
-                LogWarn('Authorization token expired, will refresh and retry.')
+                LogWarn("Authorization token expired -- ${e.getLocalizedMessage()}: ${e.response.data}")
+                LogWarn('Authorization token expired (cont) -- will refresh and retry.')
                 refreshToken()
             }
             else 
@@ -908,10 +915,10 @@ def refreshRemoteSensor(com.hubitat.app.DeviceWrapper device, retry=false)
         {
             pauseExecution(10 * 1000)
             
-            if (e.getStatusCode() == 401) 
+            if (e.getStatusCode() == 401 || e.getStatusCode() == 400)
             {
-                LogWarn('Authorization token expired, will refresh and retry.')
-                refreshToken()
+                LogWarn("Authorization token expired -- ${e.getLocalizedMessage()}: ${e.response.data}")
+                LogWarn('Authorization token expired (cont) -- will refresh and retry.')
             }
             else 
             {
