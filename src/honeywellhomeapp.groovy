@@ -35,6 +35,9 @@ Considerable inspiration an example to: https://github.com/dkilgore90/google-sdm
 	29-May-2026 - add more immunity to multithreading issues 
 	    - make app single threaded
 		- handle 400 errors on refresh by refreshing token (possibly caused by too many API calls per hour?)
+
+	29-May-2026 - move to IntelliJ development
+	    - add ability to poll thermostats and remote sensors at different rates
 */
 
 
@@ -45,6 +48,8 @@ import groovy.transform.Field
 
 @Field static String global_apiURL = "https://api.honeywellhome.com"
 @Field static String global_redirectURL = "https://cloud.hubitat.com/oauth/stateredirect"
+
+@Field static Integer refreshCount = 0     // counts refresh operations - value doesn't matter as using with modulo operator
 
 definition(
         name: "Honeywell Home",
@@ -57,18 +62,18 @@ definition(
         iconUrl: "",
         iconX2Url: "")
 
-preferences 
-{
-    page(name: "mainPage")
-    page(name: "debugPage", title: "Debug Options", install: false)
-    page(name: "loginPage", title: "Login Options", install: true)
-    page(name: "connectToHoneywell")
-}
+preferences
+        {
+            page(name: "mainPage")
+            page(name: "debugPage", title: "Debug Options", install: false)
+            page(name: "loginPage", title: "Login Options", install: true)
+            page(name: "connectToHoneywell")
+        }
 
 mappings {
     path("/handleAuth") {
         action: [
-            GET: "handleAuthRedirect"
+                GET: "handleAuthRedirect"
         ]
     }
 }
@@ -78,7 +83,7 @@ def mainPage() {
     dynamicPage(name: "mainPage", title: "Honeywell Home", install: true, uninstall: true) {
         installCheck()
         if(state.appInstalled == 'COMPLETE')
-        {   
+        {
             section {
                 paragraph "Establish connection to Honeywell Home and Discover devices"
             }
@@ -87,40 +92,40 @@ def mainPage() {
 
             section {
                 href(
-                    name       : 'loginHref',
-                    title      : 'Login Options',
-                    page       : 'loginPage',
-                    description: 'Access Login Options'
+                        name       : 'loginHref',
+                        title      : 'Login Options',
+                        page       : 'loginPage',
+                        description: 'Access Login Options'
                 )
-            }            
+            }
             section {
                 input name: "debugOutput", type: "bool", title: "Enable Debug Logging?", defaultValue: false, submitOnChange: true
             }
             getDebugLink()
-        }      
+        }
     }
 }
 
 def installCheck()
 {
-	state.appInstalled = app.getInstallationState() 
-	if(state.appInstalled != 'COMPLETE'){
-		section{paragraph "Please hit 'Done' to install '${app.label}' app "}
-  	}
-  	else{
-    	LogInfo("Parent Installed OK")
-  	}
+    state.appInstalled = app.getInstallationState()
+    if(state.appInstalled != 'COMPLETE'){
+        section{paragraph "Please hit 'Done' to install '${app.label}' app "}
+    }
+    else{
+        LogInfo("Parent Installed OK")
+    }
 }
 
 
 
-def loginPage() 
+def loginPage()
 {
     dynamicPage(name:"loginPage", title: "Honeywell Auth Configuration", install: false, uninstall: false) {
         section {
             paragraph "The default key's below are shared and typically hit rate limits."
-            paragraph "Please create and input your own Consumer and API Key From https://developer.honeywellhome.com/"  
-                    
+            paragraph "Please create and input your own Consumer and API Key From https://developer.honeywellhome.com/"
+
             paragraph """Signup is free, once you have a username/password login and then:
                 1) Navigate to "My Apps"
                 2) Click "Create New App"
@@ -158,7 +163,7 @@ def debugPage() {
         section {
             input 'createNewAccessToken', 'button', title: 'Create New Access Token', submitOnChange: true
         }
-        
+
     }
 }
 
@@ -189,16 +194,17 @@ def installed()
 {
     LogInfo("Installing Honeywell Home.");
     createAccessToken();
-    
+
 }
 
-def initialize() 
+def initialize()
 {
     LogInfo("Initializing Honeywell Home.");
     unschedule()
+    refreshCount = 0
     refreshToken()
     RefreshAllDevices()
-    
+
     if (refreshIntervals != "0" && refreshIntervals != null)
     {
         def cronString = ('0 */' + refreshIntervals + ' * ? * *')
@@ -211,7 +217,7 @@ def initialize()
     }
 }
 
-def updated() 
+def updated()
 {
     LogDebug("Updated with config: ${settings}");
     if (refreshIntervals == null)
@@ -221,7 +227,7 @@ def updated()
     initialize();
 }
 
-def uninstalled() 
+def uninstalled()
 {
     LogInfo("Uninstalling Honeywell Home.");
     unschedule()
@@ -231,7 +237,7 @@ def uninstalled()
     }
 }
 
-def connectToHoneywell() 
+def connectToHoneywell()
 {
     LogDebug("connectToHoneywell()");
     LogDebug("Key: ${settings.consumerKey}")
@@ -247,14 +253,14 @@ def connectToHoneywell()
     def authQueryString = "response_type=code&redirect_uri=${escapedRedirectURL}&client_id=${settings.consumerKey}&state=${auth_state}";
 
     def params = [
-        uri: global_apiURL,
-        path: "/oauth2/authorize",
-        queryString: authQueryString.toString()
+            uri: global_apiURL,
+            path: "/oauth2/authorize",
+            queryString: authQueryString.toString()
     ]
     LogDebug("honeywell_auth request params: ${params}");
     try {
-        httpPost(params) { response -> 
-            if (response.status == 302) 
+        httpPost(params) { response ->
+            if (response.status == 302)
             {
                 LogDebug("Response 302, getting redirect")
                 redirectLocation = response.headers.'Location'
@@ -264,7 +270,7 @@ def connectToHoneywell()
             {
                 LogError("Auth request Returned Invalid HTTP Response: ${response.status}")
                 return false;
-            } 
+            }
         }
     }
     catch (groovyx.net.http.HttpResponseException e)
@@ -275,43 +281,43 @@ def connectToHoneywell()
 
     dynamicPage(name: "mainPage", title: "Honeywell Home", install: true, uninstall: true) {
         section
-        {
-            paragraph "Click below to be redirected to Honeywall to authorize Hubitat access."
-            href(
-                name       : 'authHref',
-                title      : 'Establish OAuth Link with Honeywell',
-                url        : redirectLocation,
-                description: ''
-            )
-        }
+                {
+                    paragraph "Click below to be redirected to Honeywall to authorize Hubitat access."
+                    href(
+                            name       : 'authHref',
+                            title      : 'Establish OAuth Link with Honeywell',
+                            url        : redirectLocation,
+                            description: ''
+                    )
+                }
     }
 }
 
-def getDiscoverButton() 
+def getDiscoverButton()
 {
-    if ( atomicState.access_token == null) 
+    if ( atomicState.access_token == null)
     {
-        section 
-        {
-            paragraph "Device discovery and configuration is hidden until authorization is completed."            
-        }
-    } 
-    else 
+        section
+                {
+                    paragraph "Device discovery and configuration is hidden until authorization is completed."
+                }
+    }
+    else
     {
-        section 
-        {
-            input 'discoverDevices', 'button', title: 'Discover', submitOnChange: true
-        }
+        section
+                {
+                    input 'discoverDevices', 'button', title: 'Discover', submitOnChange: true
+                }
     }
 }
 
 def getDebugLink() {
     section{
         href(
-            name       : 'debugHref',
-            title      : 'Debug buttons',
-            page       : 'debugPage',
-            description: 'Access debug buttons (force Token refresh, delete child devices , refresh devices)'
+                name       : 'debugHref',
+                title      : 'Debug buttons',
+                page       : 'debugPage',
+                description: 'Access debug buttons (force Token refresh, delete child devices , refresh devices)'
         )
     }
 }
@@ -333,10 +339,15 @@ def listDiscoveredDevices() {
             paragraph "Discovered devices are listed below:"
             paragraph links
         }
-            section {
-                paragraph "Refresh interval (how often devices are automaticaly refreshed/polled):"
+        section {
+            paragraph "Refresh interval (how often devices are automaticaly refreshed/polled):"
 
-                input name: "refreshIntervals", type: "enum", title: "Set the refresh interval.", options: [0:"off", 1:"1 minute", 2:"2 minutes", 5:"5 minutes",10:"10 minutes",15:"15 minutes",30:"30 minutes",55:"55 minutes"], required: true, defaultValue: "10", submitOnChange: true
+            input name: "refreshIntervals", type: "enum", title: "Set the refresh interval.", options: [0:"off", 1:"1 minute", 2:"2 minutes", 5:"5 minutes",10:"10 minutes",15:"15 minutes",30:"30 minutes",55:"55 minutes"], required: true, defaultValue: "10", submitOnChange: true
+        }
+        section {
+            paragraph "Ratio of thermostat to remote sensor refreshes:"
+
+            input name: "refreshRatio", type: "enum", title: "Set the refresh ratio.", options: [0:"No remotes", 1:"1:1", 2:"2:1", 3:"3:1",4:"4:1",5:"5:1",6:"6:1"], required: true, defaultValue: "1:1", submitOnChange: true
         }
     }
 }
@@ -345,30 +356,30 @@ def listDiscoveredDevices() {
 
 def appButtonHandler(btn) {
     switch (btn) {
-    case 'discoverDevices':
-        discoverDevices()
-        break
-    case 'refreshToken':
-        refreshToken()
-        break
-    case 'deleteDevices':
-        deleteDevices()
-        break
-    case 'refreshDevices':
-        RefreshAllDevices()
-        break
-    case 'initialize':
-        initialize()
-        break
-    case 'createNewAccessToken':
-         atomicState.access_token = null
-        createAccessToken()
-        break
-    case 'connectToHoneywell':
-        connectToHoneywell()
-        break
-    default:
-        LogError("Invalid Button In Handler")
+        case 'discoverDevices':
+            discoverDevices()
+            break
+        case 'refreshToken':
+            refreshToken()
+            break
+        case 'deleteDevices':
+            deleteDevices()
+            break
+        case 'refreshDevices':
+            RefreshAllDevices()
+            break
+        case 'initialize':
+            initialize()
+            break
+        case 'createNewAccessToken':
+            atomicState.access_token = null
+            createAccessToken()
+            break
+        case 'connectToHoneywell':
+            connectToHoneywell()
+            break
+        default:
+            LogError("Invalid Button In Handler")
     }
 }
 
@@ -380,7 +391,7 @@ def deleteDevices()
         if (it != null) {
             deleteChildDevice it.getDeviceNetworkId()
         }
-    } 
+    }
 }
 
 def discoverDevices()
@@ -395,7 +406,7 @@ def discoverDevices()
 
     //add error checking
     def reJson =''
-    try 
+    try
     {
         httpGet(params) { response ->
             def reCode = response.getStatus();
@@ -404,7 +415,7 @@ def discoverDevices()
             LogDebug("reJson: ${reJson}")
         }
     }
-    catch (groovyx.net.http.HttpResponseException e) 
+    catch (groovyx.net.http.HttpResponseException e)
     {
         LogError("Location Discover failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
         return;
@@ -427,7 +438,7 @@ def discoverDevices()
                                     name : "Honeywell - ${dev.deviceModel.toString()} - ${dev.deviceID.toString()}",
                                     label: dev.userDefinedDeviceName.toString()
                             ])
-                 }
+                }
                 catch (com.hubitat.app.exception.UnknownDeviceTypeException e) {
                     LogInfo("${e.message} - you need to install the appropriate driver.")
                     return
@@ -447,17 +458,17 @@ def discoverDevices()
                                 return  // ignore thermostat entry
                             }
                             def roomName = getRemoteSensorUserDefName(dev.deviceID.toString(), locationID,
-                                                    group.id.toString(), room)
+                                    group.id.toString(), room)
                             try
                             {
                                 def newRemoteSensor = addChildDevice(
-                                    'thecloudtaylor',
-                                    'Honeywell Home Remote Sensor',
-                                    "${locationID}-${dev.deviceID.toString()}-${group.id.toString()}-${room.toString()}",
-                                    [
-                                            name : "Honeywell Home Remote Sensor",
-                                            label: "${dev.userDefinedDeviceName} Thermostat Sensor: ${roomName}"
-                                    ])
+                                        'thecloudtaylor',
+                                        'Honeywell Home Remote Sensor',
+                                        "${locationID}-${dev.deviceID.toString()}-${group.id.toString()}-${room.toString()}",
+                                        [
+                                                name : "Honeywell Home Remote Sensor",
+                                                label: "${dev.userDefinedDeviceName} Thermostat Sensor: ${roomName}"
+                                        ])
 
                                 sendEvent(newRemoteSensor, [name: "groupId", value: group.id])
                                 sendEvent(newRemoteSensor, [name: "roomId", value: room])
@@ -467,11 +478,11 @@ def discoverDevices()
                             }
                             catch (com.hubitat.app.exception.UnknownDeviceTypeException e)
                             {
-                            LogInfo("${e.message} - you need to install the appropriate driver.")
+                                LogInfo("${e.message} - you need to install the appropriate driver.")
                             }
                             catch (IllegalArgumentException ignored)
                             {
-                            //Intentionally ignored.  Expected if device id already exists in HE.
+                                //Intentionally ignored.  Expected if device id already exists in HE.
                             }
                         }
                     }
@@ -486,37 +497,37 @@ def discoverDevicesCallback(resp, data)
     LogDebug("discoverDevicesCallback()");
 
     def respCode = resp.getStatus()
-    if (resp.hasError()) 
+    if (resp.hasError())
     {
         def respError = ''
-        try 
+        try
         {
             respError = resp.getErrorJson()
-        } 
-        catch (Exception ignored) 
+        }
+        catch (Exception ignored)
         {
             // no response body
         }
-        if (respCode == 401 && !data.isRetry) 
+        if (respCode == 401 && !data.isRetry)
         {
             LogWarn('Authorization token expired, will refresh and retry.')
             refreshToken()
             data.isRetry = true
             asynchttpGet(handleDeviceList, data.params, data)
-        } 
-        else 
+        }
+        else
         {
             LogWarn("Device-list response code: ${respCode}, body: ${respError}")
         }
-    } 
-    else 
+    }
+    else
     {
         def respJson = resp.getJson()
         LogDebug(respJson);
     }
 }
 
-def handleAuthRedirect() 
+def handleAuthRedirect()
 {
     LogDebug("handleAuthRedirect()");
 
@@ -526,21 +537,21 @@ def handleAuthRedirect()
     def authorization = ("${settings.consumerKey}:${settings.consumerSecret}").bytes.encodeBase64().toString()
 
     def headers = [
-                    Authorization: authorization,
-                    Accept: "application/json"
-                ]
+            Authorization: authorization,
+            Accept: "application/json"
+    ]
     def body = [
-                    grant_type:"authorization_code",
-                    code:authCode,
-                    redirect_uri:global_redirectURL
+            grant_type:"authorization_code",
+            code:authCode,
+            redirect_uri:global_redirectURL
     ]
     def params = [uri: global_apiURL, path: "/oauth2/token", headers: headers, body: body]
-    
-    try 
+
+    try
     {
         httpPost(params) { response -> loginResponse(response) }
-    } 
-    catch (groovyx.net.http.HttpResponseException e) 
+    }
+    catch (groovyx.net.http.HttpResponseException e)
     {
         LogError("Login failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
     }
@@ -549,7 +560,7 @@ def handleAuthRedirect()
     stringBuilder << "<!DOCTYPE html><html><head><title>Honeywell Connected to Hubitat</title></head>"
     stringBuilder << "<body><p>Hubitate and Honeywell are now connected.</p>"
     stringBuilder << "<p><a href=http://${location.hub.localIP}/installedapp/configure/${app.id}/mainPage>Click here</a> to return to the App main page.</p></body></html>"
-    
+
     def html = stringBuilder.toString()
 
     render contentType: "text/html", data: html, status: 200
@@ -564,23 +575,23 @@ def refreshToken()
         def authorization = ("${settings.consumerKey}:${settings.consumerSecret}").bytes.encodeBase64().toString()
 
         def headers = [
-                        Authorization: authorization,
-                        Accept: "application/json"
-                    ]
+                Authorization: authorization,
+                Accept: "application/json"
+        ]
         def body = [
-                        grant_type:"refresh_token",
-                        refresh_token: atomicState.refresh_token
+                grant_type:"refresh_token",
+                refresh_token: atomicState.refresh_token
 
         ]
         def params = [uri: global_apiURL, path: "/oauth2/token", headers: headers, body: body, timeout: 120]
-        
-        try 
+
+        try
         {
             httpPost(params) { response -> loginResponse(response) }
-        } 
-        catch (groovyx.net.http.HttpResponseException e) 
+        }
+        catch (groovyx.net.http.HttpResponseException e)
         {
-            LogError("Login failed -- ${e.getLocalizedMessage()}: ${e.response.data}")  
+            LogError("Login failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
         }
     }
     else
@@ -589,7 +600,7 @@ def refreshToken()
     }
 }
 
-def loginResponse(response) 
+def loginResponse(response)
 {
     LogDebug("loginResponse()");
 
@@ -600,9 +611,9 @@ def loginResponse(response)
 
     if (reCode == 200)
     {
-         atomicState.access_token = reJson.access_token;
-         atomicState.refresh_token = reJson.refresh_token;
-        
+        atomicState.access_token = reJson.access_token;
+        atomicState.refresh_token = reJson.refresh_token;
+
         Integer expireTime = (Integer.parseInt(reJson.expires_in) - 100) as Integer
         // Integer expireTime = (Integer.parseInt(reJson.expires_in) / 2) as Integer
         LogInfo("Honeywell API Token Refreshed Succesfully, Next Scheduled in: ${expireTime} sec")
@@ -618,20 +629,27 @@ def RefreshAllDevices()
 {
     LogDebug("RefreshAllDevices()");
 
+    Boolean doRemote
+    Integer refRatio
+
+    refRatio = refreshRatio as Integer
+    doRemote = (refRatio != 0) && (refreshCount++ % refRatio == 0)
+
     def children = getChildDevices()
-    children.each 
-    {
-        if (it != null) 
-        {
-            // Thermostat or Sensor?
-            if (it.hasAttribute("groupId") && it.hasAttribute("roomId")) {
-                refreshRemoteSensor(it)
+    children.each
+            {
+                if (it != null)
+                {
+                    // Thermostat or Sensor?
+                    if (it.hasAttribute("groupId") && it.hasAttribute("roomId")) {
+                        if(doRemote)
+                            refreshRemoteSensor(it)
+                    }
+                    else {
+                        refreshThermosat(it)
+                    }
+                }
             }
-            else {
-                refreshThermosat(it)
-            }
-        }
-    }
 }
 
 def refreshHelper(jsonString, cloudString, deviceString, com.hubitat.app.DeviceWrapper device, optionalUnits=null, optionalMakeLowerMap=false, optionalMakeLowerString=false)
@@ -639,10 +657,10 @@ def refreshHelper(jsonString, cloudString, deviceString, com.hubitat.app.DeviceW
     try
     {
         LogDebug("refreshHelper() cloudString:${cloudString} - deviceString:${deviceString} - device:${device} - optionalUnits:${optionalUnits} - optionalMakeLowerMap:${optionalMakeLower} -optionalMakeLowerString:${optionalMakeLower}")
-        
+
         def value = jsonString.get(cloudString)
         LogDebug("updateThermostats-${cloudString}: ${value}")
-        
+
         if (value == null)
         {
             LogDebug("Thermostate Does not Support: ${deviceString} (${cloudString})")
@@ -695,42 +713,42 @@ def refreshThermosat(com.hubitat.app.DeviceWrapper device, retry=false)
 
     //add error checking
     def reJson =''
-    try 
+    try
     {
-        httpGet(params) 
-        { 
-            response ->
-            def reCode = response.getStatus();
-            reJson = response.getData();
-            LogDebug("reCode: {$reCode}")
-            LogDebug("reJson: {$reJson}")
-        }
+        httpGet(params)
+                {
+                    response ->
+                        def reCode = response.getStatus();
+                        reJson = response.getData();
+                        LogDebug("reCode: {$reCode}")
+                        LogDebug("reJson: {$reJson}")
+                }
     }
-    catch (groovyx.net.http.HttpResponseException e) 
+    catch (groovyx.net.http.HttpResponseException e)
     {
         /* if (e.getStatusCode() == 401 && !retry) */
         if (!retry)
         {
             pauseExecution(10 * 1000)
-            
+
             if (e.getStatusCode() == 401 || e.getStatusCode() == 400)
             {
                 LogWarn("Authorization token expired -- ${e.getLocalizedMessage()}: ${e.response.data}")
                 LogWarn('Authorization token expired (cont) -- will refresh and retry.')
                 refreshToken()
             }
-            else 
+            else
             {
                 LogWarn("Thermostat API retry -- ${e.getLocalizedMessage()}: ${e.response.data}")
             }
             refreshThermosat(device, true)
-			return
+            return
         }
-		else
-		{
-        LogError("Thermosat API failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
-		return
-		}
+        else
+        {
+            LogError("Thermosat API failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
+            return
+        }
     }
 
     def tempUnits = "F"
@@ -831,11 +849,11 @@ String getRemoteSensorUserDefName(String parentDeviceId, String locationId, Stri
             refreshToken()
             return getRemoteSensorUserDefName(parentDeviceId, locationId, groupId, roomID, true)
         }
-		else {
-			LogError("Remote Sensor API failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
-			return ""
-		}
-        
+        else {
+            LogError("Remote Sensor API failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
+            return ""
+        }
+
     }
 
     def roomJson
@@ -914,42 +932,42 @@ def refreshRemoteSensor(com.hubitat.app.DeviceWrapper device, retry=false)
         if (!retry)
         {
             pauseExecution(10 * 1000)
-            
+
             if (e.getStatusCode() == 401 || e.getStatusCode() == 400)
             {
                 LogWarn("Authorization token expired -- ${e.getLocalizedMessage()}: ${e.response.data}")
                 LogWarn('Authorization token expired (cont) -- will refresh and retry.')
             }
-            else 
+            else
             {
                 LogWarn("Remote Sensor API retry -- ${e.getLocalizedMessage()}: ${e.response.data}")
             }
             refreshRemoteSensor(device, true)
-			return
+            return
         }
-		else
-		{
-        LogError("Remote Sensor API failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
-		return
-		}
+        else
+        {
+            LogError("Remote Sensor API failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
+            return
+        }
     }
 
- /*
-    {
-        if (e.getStatusCode() == 401 && !retry)
-        {
-            LogWarn('Authorization token expired, will refresh and retry.')
-            refreshToken()
-            refreshRemoteSensor(device, true)
-			return
-        }
-		else 
-		{
-			LogError("Remote Sensor API failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
-			return
-		}
-    }
-*/
+    /*
+       {
+           if (e.getStatusCode() == 401 && !retry)
+           {
+               LogWarn('Authorization token expired, will refresh and retry.')
+               refreshToken()
+               refreshRemoteSensor(device, true)
+               return
+           }
+           else
+           {
+               LogError("Remote Sensor API failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
+               return
+           }
+       }
+   */
 
     def parentDeviceNetId = device.currentValue("parentDeviceNetId")
     def tempUnits
@@ -993,7 +1011,7 @@ def setThermosatSetPoint(com.hubitat.app.DeviceWrapper device, mode=null, autoCh
     def honewellDeviceID = deviceID.substring((locDelminator+2))
     def heatSet = heatPoint != null
     def coolSet = coolPoint != null
-    
+
     if (mode == null)
     {
         mode=device.currentValue('thermostatMode');
@@ -1036,39 +1054,39 @@ def setThermosatSetPoint(com.hubitat.app.DeviceWrapper device, mode=null, autoCh
     def uri = global_apiURL + '/v2/devices/thermostats/'+ honewellDeviceID + '?apikey=' + settings.consumerKey + '&locationId=' + honeywellLocation
 
     def headers = [
-                    Authorization: 'Bearer ' +  atomicState.access_token,
-                    "Content-Type": "application/json"
-                    ]
+            Authorization: 'Bearer ' +  atomicState.access_token,
+            "Content-Type": "application/json"
+    ]
     def body = []
 
 
     // For LCC devices thermostatSetpointStatus = "NoHold" will return to schedule. "TemporaryHold" will hold the set temperature until "nextPeriodTime". "PermanentHold" will hold the setpoint until user requests another change.
     // If heating/cooling setpoint is provided and set to 0, then this is interpreted as a request to return to schedule.
     // BugBug: Need to include nextPeriodTime if TemporaryHoldIs true
- 
+
     if (honewellDeviceID.startsWith("LCC"))
     {
- 		if ((heatSet && heatPoint <= 0 ) || (coolSet && coolPoint <= 0))
-		{
-			body = [
-				mode:mode,
-				thermostatSetpointStatus:"NoHold",
-                heatSetpoint:device.currentValue('heatingSetpoint'), 
-                coolSetpoint:device.currentValue('coolingSetpoint')]
-		}
-		else {
-			body = [
-					mode:mode,
-					thermostatSetpointStatus:"PermanentHold", 
-					heatSetpoint:heatPoint, 
-					coolSetpoint:coolPoint]
-		}
+        if ((heatSet && heatPoint <= 0 ) || (coolSet && coolPoint <= 0))
+        {
+            body = [
+                    mode:mode,
+                    thermostatSetpointStatus:"NoHold",
+                    heatSetpoint:device.currentValue('heatingSetpoint'),
+                    coolSetpoint:device.currentValue('coolingSetpoint')]
+        }
+        else {
+            body = [
+                    mode:mode,
+                    thermostatSetpointStatus:"PermanentHold",
+                    heatSetpoint:heatPoint,
+                    coolSetpoint:coolPoint]
+        }
     }
     else //TCC model
     {
         body = [
                 mode:mode,
-                heatSetpoint:heatPoint, 
+                heatSetpoint:heatPoint,
                 coolSetpoint:coolPoint]
     }
 
@@ -1076,7 +1094,7 @@ def setThermosatSetPoint(com.hubitat.app.DeviceWrapper device, mode=null, autoCh
     {
         body.put("autoChangeoverActive",autoChangeoverActive)
     }
-    
+
     if (emergencyHeatActive != null)
     {
         body.put("emergencyHeatActive", emergencyHeatActive)
@@ -1089,7 +1107,7 @@ def setThermosatSetPoint(com.hubitat.app.DeviceWrapper device, mode=null, autoCh
     {
         httpPostJson(params) { response -> LogInfo("SetThermostate(${device.displayName}) Mode: ${mode}; Heatsetpoint: ${heatPoint}; CoolPoint: ${coolPoint} API Response: ${response.getStatus()}")}
     }
-    catch (groovyx.net.http.HttpResponseException e) 
+    catch (groovyx.net.http.HttpResponseException e)
     {
         if (e.getStatusCode() == 401 && !retry)
         {
@@ -1097,11 +1115,11 @@ def setThermosatSetPoint(com.hubitat.app.DeviceWrapper device, mode=null, autoCh
             refreshToken()
             return setThermosatSetPoint(device, mode, autoChangeoverActive, emergencyHeatActive,  heatPoint, coolPoint, true)
         }
-		else
-		{
-			LogError("Set Api Call failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
-			return false
-		}
+        else
+        {
+            LogError("Set Api Call failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
+            return false
+        }
     }
 
     refreshThermosat(device)
@@ -1145,9 +1163,9 @@ def setThermosatFan(com.hubitat.app.DeviceWrapper device, fan=null, retry=false)
     def uri = global_apiURL + '/v2/devices/thermostats/'+ honewellDeviceID + '/fan' + '?apikey=' + settings.consumerKey + '&locationId=' + honeywellLocation
 
     def headers = [
-                    Authorization: 'Bearer ' +  atomicState.access_token,
-                    "Content-Type": "application/json"
-                    ]
+            Authorization: 'Bearer ' +  atomicState.access_token,
+            "Content-Type": "application/json"
+    ]
     def body = [
             mode:fan]
 
@@ -1158,7 +1176,7 @@ def setThermosatFan(com.hubitat.app.DeviceWrapper device, fan=null, retry=false)
     {
         httpPostJson(params) { response -> LogDebug("SetThermostateFan Response: ${response.getStatus()}")}
     }
-    catch (groovyx.net.http.HttpResponseException e) 
+    catch (groovyx.net.http.HttpResponseException e)
     {
         if (e.getStatusCode() == 401 && !retry)
         {
@@ -1166,12 +1184,12 @@ def setThermosatFan(com.hubitat.app.DeviceWrapper device, fan=null, retry=false)
             refreshToken()
             return setThermosatFan(device, fan, true)
         }
-		else 
-		{
-			LogError("Set Fan Call failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
-			return false
-		}
-   
+        else
+        {
+            LogError("Set Fan Call failed -- ${e.getLocalizedMessage()}: ${e.response.data}")
+            return false
+        }
+
     }
 
     refreshThermosat(device)
