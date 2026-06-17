@@ -38,6 +38,11 @@ Considerable inspiration an example to: https://github.com/dkilgore90/google-sdm
 
 	29-May-2026 - move to IntelliJ development
 	    - add ability to poll thermostats and remote sensors at different rates
+
+	17-Jun-2026
+	    - add preference to enable/disable info logging
+	    - change expire time backoff from 100s to 300s
+	    - change retry message in refreshThermostat from warning to info
 */
 
 
@@ -58,7 +63,7 @@ definition(
         description: "App for Lyric (LCC) and T series (TCC) Honeywell Thermostats, requires corisponding driver.",
         importUrl:"https://raw.githubusercontent.com/thecloudtaylor/hubitat-honeywell/main/honeywellhomeapp.groovy",
         category: "Thermostate",
-        singleThreaded: true,
+//        singleThreaded: true,
         iconUrl: "",
         iconX2Url: "")
 
@@ -100,6 +105,7 @@ def mainPage() {
             }
             section {
                 input name: "debugOutput", type: "bool", title: "Enable Debug Logging?", defaultValue: false, submitOnChange: true
+                input name: "textOutput", type: "bool", title: "Enable Descriptive Text Logging?", defaultValue: false, submitOnChange: true
             }
             getDebugLink()
         }
@@ -177,7 +183,9 @@ def LogDebug(logMessage)
 
 def LogInfo(logMessage)
 {
-    log.info "${logMessage}";
+    if(settings?.textOutput) {
+        log.info "${logMessage}";
+    }
 }
 
 def LogWarn(logMessage)
@@ -614,7 +622,7 @@ def loginResponse(response)
         atomicState.access_token = reJson.access_token;
         atomicState.refresh_token = reJson.refresh_token;
 
-        Integer expireTime = (Integer.parseInt(reJson.expires_in) - 100) as Integer
+        Integer expireTime = (Integer.parseInt(reJson.expires_in) - 300) as Integer
         // Integer expireTime = (Integer.parseInt(reJson.expires_in) / 2) as Integer
         LogInfo("Honeywell API Token Refreshed Succesfully, Next Scheduled in: ${expireTime} sec")
         runIn(expireTime, refreshToken)
@@ -733,8 +741,8 @@ def refreshThermosat(com.hubitat.app.DeviceWrapper device, retry=false)
 
             if (e.getStatusCode() == 401 || e.getStatusCode() == 400)
             {
-                LogWarn("Authorization token expired -- ${e.getLocalizedMessage()}: ${e.response.data}")
-                LogWarn('Authorization token expired (cont) -- will refresh and retry.')
+                LogInfo("Authorization token expired -- ${e.getLocalizedMessage()}: ${e.response.data}")
+                LogInfo('Authorization token expired (cont) -- will refresh and retry.')
                 refreshToken()
             }
             else
